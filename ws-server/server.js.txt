@@ -1,0 +1,59 @@
+const WebSocket = require("ws");
+const http = require("http");
+
+const server = http.createServer();
+const wss = new WebSocket.Server({ server });
+
+// { name: { ws, date } }
+let clients = {};
+
+wss.on("connection", (ws) => {
+
+    ws.on("message", (msg) => {
+        const message = msg.toString();
+
+        if (message.startsWith("JOIN:")) {
+            const data = message.replace("JOIN:", "");
+            const [name, date] = data.split("|");
+
+            clients[name] = { ws: ws, date: date };
+
+            broadcastDevices();
+        }
+
+        if (message.startsWith("TO:")) {
+            const parts = message.split(":");
+
+            const target = parts[1];
+            const payload = parts.slice(2).join(":");
+
+            if (clients[target]) {
+                clients[target].ws.send(payload);
+            }
+        }
+    });
+
+    ws.on("close", () => {
+        for (let name in clients) {
+            if (clients[name].ws === ws) {
+                delete clients[name];
+            }
+        }
+        broadcastDevices();
+    });
+});
+
+
+function broadcastDevices() {
+    let list = Object.entries(clients)
+        .map(([name, obj]) => `${name}|${obj.date}`)
+        .join(",");
+
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send("DEVICES:" + list);
+        }
+    });
+}
+
+server.listen(process.env.PORT || 8080);
